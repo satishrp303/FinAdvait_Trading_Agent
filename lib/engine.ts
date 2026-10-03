@@ -7,10 +7,12 @@ export type Position={id:string;symbol:string;qty:number;entry:number;stop:numbe
 export type Trade=Position & {exit:number;exitFee:number;net:number;closed:number;reason:string};
 export type State={version:number;step:number;cash:number;settings:Settings;positions:Position[];trades:Trade[];halted:boolean;ended:boolean;history:{step:number;equity:number}[];events:{step:number;text:string}[]};
 export type Signal={symbol:string;name:string;sector:string;price:number;change:number;vwap:number;ema9:number;ema21:number;rvol:number;breakout:number;stop:number;target:number;status:'BUY'|'WAIT'|'NO TRADE';checks:boolean[];bars:Candle[]};
+const MARKET_OPEN_MINUTE=9*60+15;
+const SESSION_CLOSE_STEP=(15*60+30-MARKET_OPEN_MINUTE)/15;
 export const fee=(gross:number)=>Math.ceil(gross*0.0004);
 export const buyFill=(price:number)=>Math.ceil(price*1.0005);
 export const sellFill=(price:number)=>Math.floor(price*0.9995);
-export function timeAt(step:number){const min=570+step*15;return `${String(Math.floor(min/60)).padStart(2,'0')}:${String(min%60).padStart(2,'0')}`;}
+export function timeAt(step:number){const min=MARKET_OPEN_MINUTE+step*15;return `${String(Math.floor(min/60)).padStart(2,'0')}:${String(min%60).padStart(2,'0')}`;}
 export interface MarketDataProvider{candles(symbol:string,step:number):Candle[]}
 export class DemoMarketData implements MarketDataProvider{
  candles(symbol:string,step:number){const index=SYMBOLS.findIndex(s=>s[0]===symbol);if(index<0)throw new Error('Unknown symbol.');const base=SYMBOLS[index][3]*100;const bars:Candle[]=[];
@@ -35,7 +37,7 @@ export function quote(s:State,symbol:string){const sig=signal(symbol,s.step,s.se
  while(qty>0&&(risk(qty)>budget||entry*qty+fee(entry*qty)>s.cash))qty--;let blocked='';
  if(s.halted)blocked='Daily loss protection is active for this session.';else if(s.ended)blocked='The demo session has ended.';else if(sig.status!=='BUY')blocked='This stock does not meet all four entry rules.';else if(s.positions.some(p=>p.symbol===symbol))blocked='A position in this stock is already open. No averaging down.';else if(s.positions.length>=s.settings.maxPositions)blocked='All position slots are occupied.';else if(qty<1)blocked='Available cash or daily risk budget is too low for one share.';
  return {signal:sig,entry,stop:sig.stop,target:sig.target,qty,cost:qty*entry+fee(qty*entry),risk:risk(qty),fees:fee(entry*qty)+fee(sig.target*qty),blocked,budget};}
-export function initialState():State{return {version:0,step:4,cash:CAPITAL,settings:{risk:60000,maxPositions:3,reward:2},positions:[],trades:[],halted:false,ended:false,history:[{step:0,equity:CAPITAL},{step:4,equity:CAPITAL}],events:[{step:4,text:'Paper desk ready. ₹1,00,000 virtual capital allocated.'}]};}
+export function initialState():State{return {version:0,step:0,cash:CAPITAL,settings:{risk:60000,maxPositions:3,reward:2},positions:[],trades:[],halted:false,ended:false,history:[{step:0,equity:CAPITAL}],events:[{step:0,text:'Paper desk ready. ₹1,00,000 virtual capital allocated.'}]};}
 export type Action={type:'approve';symbol:string}|{type:'advance'}|{type:'close';id:string}|{type:'settings';settings:Settings}|{type:'reset'};
 function close(s:State,p:Position,price:number,reason:string){const exit=sellFill(price),exitFee=fee(exit*p.qty),net=(exit-p.entry)*p.qty-p.entryFee-exitFee;s.cash+=exit*p.qty-exitFee;s.positions=s.positions.filter(x=>x.id!==p.id);s.trades.unshift({...p,exit,exitFee,net,closed:s.step,reason});s.events.unshift({step:s.step,text:`${p.symbol} · ${reason} · ${p.qty} shares closed`});}
 export function protectiveExit(p:Position,b:Candle):{price:number;reason:string}|null{if(b.open<=p.stop)return {price:b.open,reason:'Stop gap'};if(b.low<=p.stop)return {price:p.stop,reason:'Stop-loss'};if(b.high>=p.target)return {price:p.target,reason:'Target reached'};return null;}
@@ -43,7 +45,7 @@ export function transition(original:State,action:Action):State{const s:State=str
  if(action.type==='reset'){const fresh=initialState();fresh.version=s.version+1;return fresh;}
  if(action.type==='approve'){const q=quote(s,action.symbol);if(q.blocked)throw new Error(q.blocked);const p:Position={id:`paper-${s.version+1}-${action.symbol}`,symbol:action.symbol,qty:q.qty,entry:q.entry,stop:q.stop,target:q.target,entryFee:fee(q.entry*q.qty),plannedRisk:q.risk,opened:s.step};s.cash-=q.cost;s.positions.push(p);s.events.unshift({step:s.step,text:`${p.symbol} · BUY approved · ${p.qty} shares filled in paper mode`});}
  else if(action.type==='close'){const p=s.positions.find(p=>p.id===action.id);if(!p)throw new Error('This position is already closed.');close(s,p,mark(p,s.step),'Manual exit');}
- else if(action.type==='advance'){if(s.ended)throw new Error('Session ended. Reset the demo to start again.');s.step++;for(const p of [...s.positions]){const exit=protectiveExit(p,market.candles(p.symbol,s.step).at(-1)!);if(exit)close(s,p,exit.price,exit.reason);}if(s.step>=24){for(const p of [...s.positions])close(s,p,mark(p,s.step),'Session close');s.ended=true;}}
+ else if(action.type==='advance'){if(s.ended)throw new Error('Session ended. Reset the demo to start again.');s.step++;for(const p of [...s.positions]){const exit=protectiveExit(p,market.candles(p.symbol,s.step).at(-1)!);if(exit)close(s,p,exit.price,exit.reason);}if(s.step>=SESSION_CLOSE_STEP){for(const p of [...s.positions])close(s,p,mark(p,s.step),'Session close');s.ended=true;}}
  else if(action.type==='settings'){const cfg=action.settings;if(!cfg||!Number.isInteger(cfg.risk)||cfg.risk<50000||cfg.risk>75000||![2,3].includes(cfg.maxPositions)||![1.5,2].includes(cfg.reward))throw new Error('Use ₹500–₹750 risk, 2–3 slots, and 1.5R or 2R target.');if(cfg.maxPositions<s.positions.length)throw new Error('Close a position before reducing the number of slots.');if(s.positions.some(p=>p.plannedRisk>cfg.risk))throw new Error('The new limit is below an open position’s committed risk.');s.settings=cfg;s.events.unshift({step:s.step,text:'Risk settings updated. Existing stops and targets preserved.'});}
  else throw new Error('Unknown action.');
  if(metrics(s).net<=-DAILY_LIMIT){s.halted=true;for(const p of [...s.positions])close(s,p,mark(p,s.step),'Daily loss protection');}

@@ -5,8 +5,9 @@ import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
 import { connectorPreview } from "./build/connector-preview-plugin.mjs";
 
-const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
-  "00000000-0000-4000-8000-000000000000";
+const LOCAL_D1_DATABASE_ID = "00000000-0000-4000-8000-000000000000";
+const D1_DATABASE_NAME = process.env.CLOUDFLARE_D1_DATABASE_NAME ?? "niftydesk-paper";
+const D1_DATABASE_ID = process.env.CLOUDFLARE_D1_DATABASE_ID ?? LOCAL_D1_DATABASE_ID;
 
 const { d1, r2 } = hostingConfig;
 
@@ -21,8 +22,8 @@ const localBindingConfig = {
     ? [
         {
           binding: d1,
-          database_name: "site-creator-d1",
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+          database_name: D1_DATABASE_NAME,
+          database_id: D1_DATABASE_ID,
         },
       ]
     : [],

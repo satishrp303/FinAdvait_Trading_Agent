@@ -17,6 +17,39 @@ Open the local address printed by the server, usually `http://127.0.0.1:8787`. D
 
 For source editing, `npm run dev` runs the development server. If that server has a bundler memory issue on Windows, use the build/start sequence above. The production preview does not require that development optimizer.
 
+## Deploy to Cloudflare
+
+The app needs one Cloudflare D1 database for saved paper accounts. The local preview uses a placeholder database id, so production deployment must provide the real D1 id.
+
+1. In Cloudflare, create a D1 database named `niftydesk-paper`.
+2. Copy the database id from Cloudflare.
+3. Add this environment variable in your Cloudflare project settings:
+
+```sh
+CLOUDFLARE_D1_DATABASE_ID=<your D1 database id>
+```
+
+If you use another database name, also add:
+
+```sh
+CLOUDFLARE_D1_DATABASE_NAME=<your D1 database name>
+```
+
+Use these Cloudflare build settings:
+
+```sh
+Build command: npm run build
+Deploy command: npx wrangler deploy
+```
+
+After the first successful build, apply the production database migration once:
+
+```sh
+npx wrangler d1 migrations apply DB --remote --config dist/server/wrangler.json
+```
+
+Your failed deployment log showed Cloudflare rejecting the placeholder id `00000000-0000-4000-8000-000000000000`. That means the build completed, but the deployed Worker could not attach to a real D1 database.
+
 ## Try the full flow
 
 1. Open **Stock scanner**, select RELIANCE, and choose **Review paper trade**.

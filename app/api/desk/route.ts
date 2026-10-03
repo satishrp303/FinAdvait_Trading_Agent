@@ -1,6 +1,17 @@
 import { env } from 'cloudflare:workers';
 import { initialState, transition, type State, type Action } from '../../../lib/engine';
-function owner(req:Request){const id=req.headers.get('oai-authenticated-user-id');if(id)return id;if(['localhost','127.0.0.1','[::1]'].includes(new URL(req.url).hostname))return 'local-paper-desk';throw new Error('Sign in to open your private paper desk.');}
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const HOSTED_DEMO_HOSTS = new Set(['finadvait-trading-agent.satishrp303.workers.dev']);
+
+function owner(req:Request){
+  const id=req.headers.get('oai-authenticated-user-id');
+  if(id)return id;
+  const hostname=new URL(req.url).hostname;
+  if(LOCAL_HOSTS.has(hostname))return 'local-paper-desk';
+  if(HOSTED_DEMO_HOSTS.has(hostname))return 'cloud-demo-paper-desk';
+  throw new Error('Sign in to open your private paper desk.');
+}
 function db(){if(!env.DB)throw new Error('Paper desk storage is unavailable. Please retry.');return env.DB;}
 async function load(id:string):Promise<State>{await db().prepare('INSERT OR IGNORE INTO desks (owner, revision, state) VALUES (?, ?, ?)').bind(id,0,JSON.stringify(initialState())).run();const row=await db().prepare('SELECT state FROM desks WHERE owner = ?').bind(id).first<{state:string}>();if(!row)throw new Error('Could not load your paper desk.');return JSON.parse(row.state);}
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
